@@ -70,14 +70,14 @@ class KillConfirmModal(ModalScreen):
         if event.button.id == "kill-yes":
             name = kill_process(self._pid)
             if name:
-                self.dismiss(True)
+                self.dismiss("killed")
             else:
-                self.dismiss(False)
+                self.dismiss("failed")
         else:
-            self.dismiss(False)
+            self.dismiss("cancelled")
 
     def key_escape(self):
-        self.dismiss(False)
+        self.dismiss("cancelled")
 
 
 class DetailModal(ModalScreen):
@@ -264,46 +264,50 @@ class PulseMonApp(App):
         try:
             loop = asyncio.get_running_loop()
             stats = await loop.run_in_executor(None, get_system_stats)
+
+            self._header_widget.uptime_seconds = stats.uptime_seconds
+
+            m = self._metrics_widget
+            m.cpu_percent = stats.cpu_percent
+            m.cpu_per_core = stats.cpu_per_core
+            m.memory_percent = stats.memory_percent
+            m.memory_used = stats.memory_used
+            m.memory_total = stats.memory_total
+            m.swap_percent = stats.swap_percent
+            m.swap_used = stats.swap_used
+            m.swap_total = stats.swap_total
+            m.disk_percent = stats.disk_percent
+            m.disk_used = stats.disk_used
+            m.disk_total = stats.disk_total
+            m.disk_io_read_per_sec = stats.disk_io_read_per_sec
+            m.disk_io_write_per_sec = stats.disk_io_write_per_sec
+            m.net_sent_per_sec = stats.net_sent_per_sec
+            m.net_recv_per_sec = stats.net_recv_per_sec
+            m.net_per_iface = stats.net_per_iface
+            m.battery_percent = stats.battery_percent
+            m.battery_charging = stats.battery_charging
+            m.temperatures = stats.temperatures
+            m.fan_speeds = stats.fan_speeds
+
+            c = self._charts_widget
+            c.cpu_history = list(stats.cpu_history)
+            c.memory_history = list(stats.memory_history)
+
+            self._stats_deque.append(stats)
+
+            if stats.cpu_percent > 90:
+                self.notify(
+                    f"CPU at {stats.cpu_percent:.0f}%",
+                    severity="error",
+                    timeout=3,
+                )
+
+            if self._tick_count % self._process_refresh_interval == 0 and not self._process_refreshing:
+                asyncio.create_task(self._refresh_processes())
         except Exception:
+            pass
+        finally:
             self._stats_refreshing = False
-            return
-
-        self._header_widget.uptime_seconds = stats.uptime_seconds
-
-        m = self._metrics_widget
-        m.cpu_percent = stats.cpu_percent
-        m.cpu_per_core = stats.cpu_per_core
-        m.memory_percent = stats.memory_percent
-        m.memory_used = stats.memory_used
-        m.memory_total = stats.memory_total
-        m.swap_percent = stats.swap_percent
-        m.swap_used = stats.swap_used
-        m.swap_total = stats.swap_total
-        m.disk_percent = stats.disk_percent
-        m.disk_used = stats.disk_used
-        m.disk_total = stats.disk_total
-        m.net_sent_per_sec = stats.net_sent_per_sec
-        m.net_recv_per_sec = stats.net_recv_per_sec
-        m.battery_percent = stats.battery_percent
-        m.battery_charging = stats.battery_charging
-
-        c = self._charts_widget
-        c.cpu_history = stats.cpu_history
-        c.memory_history = stats.memory_history
-
-        self._stats_deque.append(stats)
-
-        if stats.cpu_percent > 90:
-            self.notify(
-                f"CPU at {stats.cpu_percent:.0f}%",
-                severity="error",
-                timeout=3,
-            )
-
-        if self._tick_count % self._process_refresh_interval == 0 and not self._process_refreshing:
-            asyncio.create_task(self._refresh_processes())
-
-        self._stats_refreshing = False
 
     async def _refresh_processes(self):
         if self._process_refreshing:
@@ -326,6 +330,7 @@ class PulseMonApp(App):
         label = SORT_LABELS[sort_key]
         self.notify(f"Sorting by: {label}", timeout=1)
         self._process_widget.sort_by = sort_key
+        asyncio.create_task(self._refresh_processes())
 
     def action_refresh_data(self):
         self.notify("Refreshing...", timeout=1)
@@ -341,13 +346,13 @@ class PulseMonApp(App):
 
         async def confirm_and_kill():
             result = await self.push_screen_wait(KillConfirmModal(pid, name))
-            if result:
+            if result == "killed":
                 self.notify(f"Process {name} ({pid}) terminated", timeout=2)
                 asyncio.create_task(self._refresh_processes())
-            else:
-                self.notify("Kill cancelled or failed", severity="warning", timeout=2)
+            elif result == "failed":
+                self.notify(f"Failed to kill {name} ({pid}) — permission denied", severity="error", timeout=3)
 
-        asyncio.ensure_future(confirm_and_kill())
+        asyncio.create_task(confirm_and_kill())
 
     def action_toggle_help(self):
         self.push_screen(HelpModal())
@@ -387,8 +392,9 @@ class PulseMonApp(App):
                     "swap_percent", "disk_percent", "net_sent_mbps", "net_recv_mbps"
                 ])
                 for s in self._stats_deque:
+                    ts = getattr(s, "timestamp", "") or datetime.now().isoformat()
                     writer.writerow([
-                        datetime.now().isoformat(),
+                        ts,
                         f"{s.cpu_percent:.1f}",
                         f"{s.memory_percent:.1f}",
                         f"{s.swap_percent:.1f}",

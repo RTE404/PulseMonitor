@@ -1,16 +1,10 @@
-from textual.widgets import Static, DataTable, Input
+from textual.widgets import DataTable, Input
 from textual.reactive import reactive
 from textual.containers import Vertical
 from textual.message import Message
-from textual import events
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional
 
-
-SEVERITY_COLORS = {
-    5: "red",
-    4: "orange1",
-    3: "yellow",
-}
+from pulsemon.utils.process_manager import search_processes
 
 
 def _cpu_color(val: float) -> str:
@@ -70,18 +64,15 @@ class ProcessTableWidget(Vertical):
             table.add_columns("PID", "Name", "CPU%", "MEM%", "Status")
 
     def watch_search_query(self, query: str):
-        from pulsemon.utils.process_manager import search_processes
         self._filtered = search_processes(list(self.processes), query)
         self._update_table()
 
     def watch_processes(self, procs: List[Dict]):
-        from pulsemon.utils.process_manager import search_processes
         self._filtered = search_processes(procs, self.search_query)
         self._update_table()
 
     def watch_sort_by(self, sort_by: str):
-        from pulsemon.utils.process_manager import get_processes
-        self.processes = get_processes(sort_by)
+        pass
 
     def _update_table(self):
         table = self._table

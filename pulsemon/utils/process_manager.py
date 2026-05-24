@@ -55,7 +55,7 @@ def get_process_detail(pid: int) -> Optional[Dict]:
                 "pid": pid,
                 "name": proc.name(),
                 "status": proc.status(),
-                "cpu_percent": proc.cpu_percent(),
+                "cpu_percent": proc.cpu_percent(interval=0.1),
                 "memory_percent": proc.memory_percent(),
                 "memory_rss": proc.memory_info().rss,
                 "create_time": proc.create_time(),

@@ -2,6 +2,7 @@ from textual.widgets import Static
 from textual.reactive import reactive
 from collections import deque
 from typing import List
+from pulsemon.utils.colors import severity_color
 
 
 BLOCKS = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
@@ -70,10 +71,4 @@ class ChartsWidget(Static):
 
         return "\n".join(lines)
 
-    @staticmethod
-    def _color(val: float, yellow: float, red: float) -> str:
-        if val >= red:
-            return "red"
-        elif val >= yellow:
-            return "yellow"
-        return "green"
+    _color = staticmethod(severity_color)

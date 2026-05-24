@@ -1,14 +1,7 @@
 from textual.widgets import Static
 from textual.reactive import reactive
 from typing import List
-
-
-def _color(val: float, yellow: float, red: float) -> str:
-    if val >= red:
-        return "red"
-    elif val >= yellow:
-        return "yellow"
-    return "green"
+from pulsemon.utils.colors import severity_color as _color
 
 
 def _bar(val: float, width: int = 10) -> str:
@@ -43,6 +36,11 @@ class MetricsWidget(Static):
     net_recv_per_sec = reactive(0.0)
     battery_percent = reactive(-1.0)
     battery_charging = reactive(False)
+    disk_io_read_per_sec = reactive(lambda: {}, init=False)  # type: ignore
+    disk_io_write_per_sec = reactive(lambda: {}, init=False)  # type: ignore
+    net_per_iface = reactive(lambda: {}, init=False)  # type: ignore
+    temperatures = reactive(lambda: {}, init=False)  # type: ignore
+    fan_speeds = reactive(lambda: {}, init=False)  # type: ignore
 
     def render(self) -> str:
         lines = []
@@ -52,7 +50,7 @@ class MetricsWidget(Static):
         lines.append(f"  [{c}]├ {self.cpu_percent:.1f}%[/{c}]")
         lines.append(f"  [{c}]├ {_bar(self.cpu_percent)}[/{c}]")
 
-        for i, core in enumerate(getattr(self, "cpu_per_core", [])):
+        for i, core in enumerate(self.cpu_per_core):
             cc = _color(core, 60, 85)
             lines.append(f"  [{cc}]├ Core {i}: {core:.1f}%[/{cc}]")
 
@@ -80,11 +78,34 @@ class MetricsWidget(Static):
         lines.append(f"  [{cd}]├ {_bar(self.disk_percent)}[/{cd}]")
 
         lines.append("")
+        lines.append("[bold]Disk I/O[/bold]")
+        if self.disk_io_read_per_sec:
+            sorted_disks = sorted(self.disk_io_read_per_sec.keys())
+            for i, name in enumerate(sorted_disks):
+                prefix = "└" if i == len(sorted_disks) - 1 else "├"
+                r = _human(int(self.disk_io_read_per_sec.get(name, 0)))
+                w = _human(int(self.disk_io_write_per_sec.get(name, 0)))
+                lines.append(f"  {prefix} {name}: ▲ {r}/s ▼ {w}/s")
+        else:
+            lines.append("  ├ N/A")
+
+        lines.append("")
         lines.append("[bold]Network[/bold]")
-        sent = _human(int(self.net_sent_per_sec))
-        recv = _human(int(self.net_recv_per_sec))
-        lines.append(f"  ├ ▲ {sent}/s")
-        lines.append(f"  ├ ▼ {recv}/s")
+        sent_total = _human(int(self.net_sent_per_sec))
+        recv_total = _human(int(self.net_recv_per_sec))
+        lines.append(f"  ├ Aggregate")
+        lines.append(f"  │ ├ ▲ {sent_total}/s")
+        lines.append(f"  │ └ ▼ {recv_total}/s")
+        if self.net_per_iface:
+            sorted_ifaces = sorted(self.net_per_iface.keys())
+            for i, name in enumerate(sorted_ifaces):
+                prefix = "└" if i == len(sorted_ifaces) - 1 else "├"
+                data = self.net_per_iface[name]
+                s = _human(int(data.get("sent_per_sec", 0)))
+                r = _human(int(data.get("recv_per_sec", 0)))
+                lines.append(f"  {prefix} {name}")
+                lines.append(f"  │ ├ ▲ {s}/s")
+                lines.append(f"  │ └ ▼ {r}/s")
 
         lines.append("")
         lines.append("[bold]Battery[/bold]")
@@ -92,6 +113,27 @@ class MetricsWidget(Static):
             cb = _color(self.battery_percent, 50, 20)
             charging = "⚡" if self.battery_charging else ""
             lines.append(f"  [{cb}]├ {self.battery_percent:.0f}% {charging}[/{cb}]")
+        else:
+            lines.append("  ├ N/A")
+
+        lines.append("")
+        lines.append("[bold]Temperature[/bold]")
+        if self.temperatures:
+            for name, sensors in self.temperatures.items():
+                for i, temp in enumerate(sensors):
+                    tag = f"{name} {i}" if len(sensors) > 1 else name
+                    c = _color(temp, 80, 90)
+                    lines.append(f"  [{c}]├ {tag}: {temp:.0f}°C[/{c}]")
+        else:
+            lines.append("  ├ N/A")
+
+        lines.append("")
+        lines.append("[bold]Fans[/bold]")
+        if self.fan_speeds:
+            for name, speeds in self.fan_speeds.items():
+                for i, rpm in enumerate(speeds):
+                    tag = f"{name} {i}" if len(speeds) > 1 else name
+                    lines.append(f"  ├ {tag}: {rpm} RPM")
         else:
             lines.append("  ├ N/A")
 
