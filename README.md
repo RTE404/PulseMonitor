@@ -1,4 +1,4 @@
-# PulseMon
+# PulseMonitor
 
 A modern terminal-based system monitor dashboard built with Python, Textual, and psutil.
 
